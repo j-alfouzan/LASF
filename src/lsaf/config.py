@@ -1,0 +1,2 @@
+PROJECT_NAME = "LSAF"
+VERSION = "0.1.0"
