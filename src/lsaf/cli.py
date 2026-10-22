@@ -1,86 +1,51 @@
 from pathlib import Path
-from unittest import result
 
 import typer
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich.align import Align
 
 from .config import PROJECT_NAME, VERSION
-
+from .probes import PROBES
 
 app = typer.Typer(
     name="lsaf",
     help="LLM Security Assessment Framework",
     add_completion=False,
 )
-
 console = Console()
 
 
 def show_banner():
     banner_path = Path(__file__).parent / "assets" / "banner.txt"
-    banner = banner_path.read_text(encoding="utf-8").strip()
-
-    logo = Text(banner, style="bold bright_green")
+    banner = (
+        banner_path.read_text(encoding="utf-8").strip()
+        if banner_path.exists()
+        else "LSAF"
+    )
 
     info = Text()
-
     info.append("LSAF\n", style="bold bright_green")
-    info.append(
-        "LLM Security Assessment Framework\n\n",
-        style="bold white",
-    )
-
+    info.append("LLM Security Assessment Framework\n\n", style="bold white")
     info.append("VERSION   ", style="bold bright_green")
     info.append(VERSION, style="white")
-
-    info.append("     PLATFORM   ", style="bold bright_green")
-    info.append("Kali Linux", style="white")
-
-    info.append("\n\n")
-
-    info.append("MODE   ", style="bold bright_green")
-    info.append("Security Assessment", style="white")
-
-    info.append("     ENGINE   ", style="bold bright_green")
-    info.append("ONLINE", style="bold bright_green")
-
-    info.append("     STATUS   ", style="bold bright_green")
-    info.append("READY", style="bold bright_green")
-
-    info_box = Panel(
-        Align.center(info),
-        border_style="bright_green",
-        padding=(1, 3),
-        width=72,
-    )
+    info.append("     MODE   ", style="bold bright_green")
+    info.append("Live Model Assessment", style="white")
 
     console.print()
-    console.print(Align.center(logo))
+    console.print(Align.center(Text(banner, style="bold bright_green")))
     console.print()
-    console.print(Align.center(info_box))
-    console.print()
-
     console.print(
         Align.center(
-            Text(
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                style="bright_green",
+            Panel(
+                Align.center(info),
+                border_style="bright_green",
+                padding=(1, 3),
+                width=72,
             )
         )
     )
-
-    console.print(
-        Align.center(
-            Text(
-                "LSAF  •  LLM SECURITY ASSESSMENT FRAMEWORK",
-                style="bold bright_green",
-            )
-        )
-    )
-
     console.print()
 
 
@@ -93,68 +58,51 @@ def main(ctx: typer.Context):
 @app.command()
 def version():
     """Show LSAF version."""
-    console.print(
-        f"[bold bright_green]{PROJECT_NAME}[/bold bright_green] "
-        f"v{VERSION}"
-    )
-@app.command()
-def scan():
-    """Start an LLM security assessment."""
-    console.print()
-    console.print("[bold bright_green]LSAF SCAN[/bold bright_green]")
-    console.print("[dim]Initializing security assessment...[/dim]")
-    console.print()
-    console.print("[bright_green][+] Assessment engine ready[/bright_green]")
-    console.print("[bright_green][+] Test environment ready[/bright_green]")
-    console.print("[bright_green][+] Waiting for assessment modules[/bright_green]")
-    console.print()
+    console.print(f"[bold bright_green]{PROJECT_NAME}[/bold bright_green] v{VERSION}")
+
 
 @app.command()
 def probes():
-    """List available assessment probes."""
-    console.print()
-    console.print("[bold bright_green]LSAF PROBES[/bold bright_green]")
-    console.print()
-    
-    console.print("[bright_green]Available Probes[/bright_green]")
-    console.print("  [white]• Prompt Injection[/white]")
-    console.print("  [white]• Jailbreak Testing[/white]")
-    console.print("  [white]• Guardrail Bypass[/white]")
-    
-    console.print()
-    console.print(
-        "[dim] Custom probes will be added to the assessment engine.[/dim]"
-    )
-    console.print()
+    """List registered assessment probes."""
+    console.print("\n[bold bright_green]LSAF PROBES[/bold bright_green]\n")
+    for probe in PROBES:
+        console.print(f"[bold white]{probe.name}[/bold white]")
+        console.print(f"  OWASP category: {probe.category}")
+        console.print(f"  {probe.description}\n")
+
+
 @app.command()
-def scan(target: str = "local"):
-    """Run an LSAF security assessment."""
+def scan(
+    name: str = typer.Option("Local Ollama Model", help="Target name"),
+    endpoint: str = typer.Option("http://localhost:11434", help="Ollama endpoint"),
+    model: str = typer.Option("qwen2.5:0.5b", help="Ollama model identifier"),
+):
+    """Run implemented probes against a local Ollama model."""
     from .runner import run_assessment
-    console.print()
-    console.print("LSAF SCAN", style="bold bright_green")
-    console.print()
-    
-    console.print(f"Target: {target}")
-    console.print("Starting assessment...", style="bright_green")
+    from .target import Target
 
-    result = run_assessment(target)
+    target = Target(name=name, endpoint=endpoint, model=model)
 
-    console.print()
-    console.print("Executed Probes", style="bright_green")
-    
-    for test in result["tests"]:
-        console.print(
-            f" • {test['probe']} — {test['status']}",
-            style="white",     
-        )       
-    console.print()
-    console.print(
-         f"Assessment status: {result['status'].upper()}",
-         style="bold bright_green",
-    )
-    console.print(f"Target: {result['target']}")
-    console.print(f"Started: {result['started_at']}")
-    console.print()
+    console.print("\n[bold bright_green]LSAF LIVE SCAN[/bold bright_green]\n")
+    console.print(f"Target: {target.name}")
+    console.print(f"Endpoint: {target.endpoint}")
+    console.print(f"Model: {target.model}\n")
+    console.print("[yellow]Connecting to Ollama and running implemented probes...[/yellow]\n")
+
+    report = run_assessment(target)
+
+    for test in report["tests"]:
+        status = test["status"].upper()
+        color = "red" if status in ("FAIL", "ERROR") else (
+            "green" if status == "PASS" else "yellow"
+        )
+        console.print(f"[bold]{test['probe']}[/bold] — [{color}]{status}[/{color}]")
+        console.print(f"  {test['analysis']}\n")
+
+    console.print("[bold bright_green]Reports saved[/bold bright_green]")
+    console.print(f"JSON: {report['report_files']['json']}")
+    console.print(f"Markdown: {report['report_files']['markdown']}\n")
+
 
 if __name__ == "__main__":
     app()
