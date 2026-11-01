@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lsaf"
+version = "0.1.0"
+description = "LLM Security Assessment Framework"
+requires-python = ">=3.10"
+dependencies = ["rich"]
+
+[project.scripts]
+lsaf-garak = "lsaf.garak_runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lsaf = ["assets/*.txt"]

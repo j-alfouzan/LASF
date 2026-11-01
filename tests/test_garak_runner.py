@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.lsaf.garak_runner import parse_report, run_garak
+from src.lsaf.garak_runner import (
+    display_report,
+    parse_report,
+    run_garak,
+)
 
 
 class TestParseReport(unittest.TestCase):
@@ -38,7 +42,6 @@ class TestParseReport(unittest.TestCase):
 
     def test_parses_evaluated_attempt(self):
         report_path = self.write_report(self.sample_record())
-
         attempts = parse_report(report_path)
 
         self.assertEqual(len(attempts), 1)
@@ -56,9 +59,21 @@ class TestParseReport(unittest.TestCase):
             "status": 2,
         })
 
-        attempts = parse_report(report_path)
+        self.assertEqual(parse_report(report_path), [])
 
-        self.assertEqual(attempts, [])
+    def test_ignores_unevaluated_attempts(self):
+        record = self.sample_record()
+        record["status"] = 1
+        report_path = self.write_report(record)
+
+        self.assertEqual(parse_report(report_path), [])
+
+    def test_ignores_attempts_without_detector_results(self):
+        record = self.sample_record()
+        record["detector_results"] = {}
+        report_path = self.write_report(record)
+
+        self.assertEqual(parse_report(report_path), [])
 
     def test_rejects_invalid_json(self):
         report_path = self.temp_path / "invalid.report.jsonl"
@@ -69,6 +84,14 @@ class TestParseReport(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             parse_report(report_path)
+
+
+class TestRunGarak(unittest.TestCase):
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.temp_path = Path(self.temp_dir.name)
 
     @patch("src.lsaf.garak_runner.subprocess.run")
     def test_timeout_raises_runtime_error(self, mock_run):
@@ -81,7 +104,7 @@ class TestParseReport(unittest.TestCase):
             "src.lsaf.garak_runner.find_garak_python",
             return_value="python.exe",
         ):
-            with self.assertRaisesRegex(RuntimeError, "timeout"):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
                 run_garak("gpt2", timeout=1)
 
     @patch("src.lsaf.garak_runner.subprocess.run")
@@ -102,17 +125,36 @@ class TestParseReport(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 RuntimeError,
-                "without producing",
+                "No new Garak report",
             ):
                 run_garak("gpt2")
+
+    def test_rejects_empty_model_name(self):
+        with self.assertRaises(ValueError):
+            run_garak("")
+
+    def test_rejects_invalid_generations(self):
+        with self.assertRaises(ValueError):
+            run_garak(
+                model_name="gpt2",
+                generations=0,
+            )
 
     @patch("src.lsaf.garak_runner.subprocess.run")
     def test_successful_garak_run_returns_structured_results(
         self,
         mock_run,
     ):
-        report_record = self.sample_record()
-        report_record["uuid"] = "success-001"
+        report_record = {
+            "entry_type": "attempt",
+            "status": 2,
+            "probe_classname": "probes.test.Test",
+            "uuid": "success-001",
+            "prompt": "Test prompt",
+            "outputs": [{"text": "Test output"}],
+            "detector_results": {"always.Pass": [False]},
+            "intent": "T999test",
+        }
 
         def fake_run(*args, **kwargs):
             report_path = self.temp_path / "test.report.jsonl"
@@ -156,7 +198,64 @@ class TestParseReport(unittest.TestCase):
             result["attempts"][0]["security_finding"],
             "undetermined",
         )
+
         mock_run.assert_called_once()
+
+
+class TestDisplayReport(unittest.TestCase):
+
+    def sample_result(self):
+        return {
+            "model": "gpt2",
+            "source": "garak",
+            "probe_spec": "probes.test.Test",
+            "started_at": "2026-11-01T10:00:00",
+            "attempt_count": 1,
+            "return_code": 0,
+            "stderr": "",
+            "attempts": [
+                {
+                    "probe": "probes.test.Test",
+                    "detector_results": {
+                        "always.Pass": [False],
+                    },
+                }
+            ],
+            "report_path": "test.report.jsonl",
+        }
+
+    @patch("src.lsaf.garak_runner.console.print")
+    def test_displays_report_summary(self, mock_print):
+        result = self.sample_result()
+        display_report(result)
+
+        output = " ".join(
+            str(arg)
+            for call in mock_print.call_args_list
+            for arg in call.args
+        )
+
+        self.assertIn("GARAK ASSESSMENT", output)
+        self.assertIn("SCAN SUMMARY", output)
+        self.assertIn("DETECTOR RESULTS", output)
+        self.assertIn("SCAN COMPLETED", output)
+
+    @patch("src.lsaf.garak_runner.console.print")
+    def test_displays_failure_status(self, mock_print):
+        result = self.sample_result()
+        result["return_code"] = 1
+        result["stderr"] = "Test error"
+
+        display_report(result)
+
+        output = " ".join(
+            str(arg)
+            for call in mock_print.call_args_list
+            for arg in call.args
+        )
+
+        self.assertIn("SCAN FAILED", output)
+        self.assertIn("Exit code: 1", output)
 
 
 if __name__ == "__main__":
